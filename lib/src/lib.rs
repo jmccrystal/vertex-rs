@@ -3,15 +3,17 @@ use std::io::{Read, Write};
 
 
 
-// Function that serializes a byte buffer with a length prefix and sends it through the writer 
+// Function that serializes a byte buffer with a length prefix and sends it through the writer
+// Structure of data: buf[0]: type of data. buf[1..5]: length of message. buf[5..]: message as bytes.
 pub fn send_data(buf: &[u8], writer: &mut impl Write) -> io::Result<()> {
 
-    if buf.len() > u32::MAX as usize { // Make sure message isn't too big for 4 bytes length 
+    if buf.len() > u32::MAX as usize { // Make sure message isn't too big for 4 bytes length
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "Message length exceeds maximum length"));
     }
 
     let len_bytes: [u8; 4] = (buf.len() as u32).to_le_bytes();
-    
+
+    // writer.write_all(&[data_type])?;
     writer.write_all(&len_bytes)?;
     writer.write_all(buf)?;
     

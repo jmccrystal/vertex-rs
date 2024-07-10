@@ -6,6 +6,12 @@ use std::sync::mpsc::{channel, Receiver, Sender, SendError};
 use lib::{send_data, receive_data};
 
 
+// #[repr(u8)]
+// enum Command {
+//     Send = 0,
+//     Echo = 1,
+//     Run = 2,
+// }
 
 #[derive(Clone)]
 struct ClientHandle {
@@ -59,9 +65,9 @@ impl Client {
                 log::info!("Successful response: {}", response);
             }
             else {
-                log::error!("An error occurred while sending message");
+                log::error!("An error occurred while receiving response");
             }
-            
+
         }
     }
 }
@@ -76,11 +82,13 @@ fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
         let command = split[0];
 
         let handles = handles.clone();
-        
-        if command == "send" {
+
+
+        // Usage: echo (ip) (message)
+        if command == "echo" {
             let ip = split[1].to_string();
             let message = split[2].to_string();
-            
+
             for handle in handles.lock().unwrap().iter() {
                 if handle.ip == ip {
                     if handle.send_message(message.clone()).is_ok() {
@@ -92,9 +100,10 @@ fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
                 }
             }
         }
-        else if command == "sendall" {
+        // Usage: echoall (message)
+        else if command == "echoall" {
             let message = split[1].to_string();
-            
+
             for handle in handles.lock().unwrap().iter() {
                 if handle.send_message(message.clone()).is_ok() {
                     log::info!("Successfully sent message {} to client with IP {}", message, handle.ip);
@@ -104,7 +113,10 @@ fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
                 }
             }
         }
-        
+        else {
+            log::error!("Please enter a valid command");
+        }
+
         input.clear();
         drop(handles);
     }
@@ -137,7 +149,7 @@ fn main() -> io::Result<()> {
                 let handles_clone = handles.clone();
                 handles_clone.lock().unwrap().push(handle_clone);
 
-                // Run main logic on each client.
+                // Run main logic on each client
                 thread::spawn( move || client.handle_client());
             }
             Err(err) => {
