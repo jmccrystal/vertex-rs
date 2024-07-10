@@ -1,3 +1,5 @@
+
+
 [workspace]
 
 members = [
@@ -6,4 +8,4 @@ members = [
     "lib",
 ]
 
-workspace.resolver = "2"
+resolver = "2"
