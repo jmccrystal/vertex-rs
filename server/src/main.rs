@@ -86,6 +86,13 @@ fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
 
         // Usage: echo (ip) (message)
         if command == "echo" {
+            
+            if split.len() != 3 {
+                log::error!("Incorrect number of arguments");
+                input.clear();
+                continue;
+            }
+            
             let ip = split[1].to_string();
             let message = split[2].to_string();
 
@@ -102,6 +109,12 @@ fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
         }
         // Usage: echoall (message)
         else if command == "echoall" {
+            if split.len() != 2 {
+                log::error!("Incorrect number of arguments");
+                input.clear();
+                continue;
+            }
+            
             let message = split[1].to_string();
 
             for handle in handles.lock().unwrap().iter() {
