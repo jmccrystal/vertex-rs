@@ -1,29 +1,24 @@
+mod tools;
+
 use std::{io, thread};
 use std::io::{BufReader, BufWriter};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver, Sender, SendError};
-use lib::{send_data, receive_data};
-
-
-// #[repr(u8)]
-// enum Command {
-//     Send = 0,
-//     Echo = 1,
-//     Run = 2,
-// }
+use lib::{send_data, receive_data, Command};
+use crate::tools::{echo, echoall, run};
+use crate::tools::CommandErr::*;
 
 #[derive(Clone)]
 struct ClientHandle {
-    sender: Sender<String>,
+    sender: Sender<(Command, String)>,
     ip: String,
 }
 
 impl ClientHandle {
-
     // Sends a message to the corresponding Client object
-    fn send_message(&self, message: String) -> Result<(), SendError<String>> {
-        self.sender.send(message)
+    fn send_message(&self, command: Command, message: String) -> Result<(), SendError<(Command, String)>> {
+        self.sender.send((command, message))
     }
 }
 
@@ -31,7 +26,8 @@ impl ClientHandle {
 struct Client {
     reader: BufReader<TcpStream>,
     writer: BufWriter<TcpStream>,
-    receiver: Receiver<String>,
+    receiver: Receiver<(Command, String)>,
+    ip: String,
 }
 
 
@@ -44,14 +40,14 @@ impl Client {
 
         let (sender, receiver) = channel();
 
-        (Client { reader, writer, receiver }, ClientHandle { sender, ip })
+        (Client { reader, writer, receiver, ip: ip.clone() }, ClientHandle { sender, ip })
     }
 
     fn send_message(&mut self) -> Option<String> {
-        let message = self.receiver.recv().ok()?;
+        let (command, message) = self.receiver.recv().ok()?;
 
-        if send_data(message.as_bytes(), &mut self.writer).is_ok() {
-            if let Some(bytes) = receive_data(&mut self.reader) {
+        if send_data(command as u8, message.as_bytes(), &mut self.writer).is_ok() {
+            if let Some((Command::Send, bytes)) = receive_data(&mut self.reader) {
                 let response = String::from_utf8_lossy(&bytes);
                 Some(response.parse().unwrap())
             }
@@ -62,10 +58,10 @@ impl Client {
     fn handle_client(&mut self) {
         loop {
             if let Some(response) = self.send_message() {
-                log::info!("Successful response: {}", response);
+                log::info!("Successful response from client with IP {}: {}", self.ip, response);
             }
             else {
-                log::error!("An error occurred while receiving response");
+                log::error!("An error occurred while receiving response from IP {}", self.ip);
             }
 
         }
@@ -73,61 +69,27 @@ impl Client {
 }
 
 fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
-
     let mut input = String::new();
     loop {
         io::stdin().read_line(&mut input).unwrap();
-        let split = input.trim().split(' ').collect::<Vec<&str>>();
+        let args = input.trim().split(' ').collect::<Vec<&str>>();
 
-        let command = split[0];
+        let command = args[0];
 
         let handles = handles.clone();
 
 
-        // Usage: echo (ip) (message)
-        if command == "echo" {
-            
-            if split.len() != 3 {
-                log::error!("Incorrect number of arguments");
-                input.clear();
-                continue;
-            }
-            
-            let ip = split[1].to_string();
-            let message = split[2].to_string();
-
-            for handle in handles.lock().unwrap().iter() {
-                if handle.ip == ip {
-                    if handle.send_message(message.clone()).is_ok() {
-                        log::info!("Successfully sent message {} to client with IP {}", message, ip);
-                    }
-                    else {
-                        log::error!("An error occurred while sending message {} to client with IP {}", message, ip);
-                    }
-                }
-            }
-        }
-        // Usage: echoall (message)
-        else if command == "echoall" {
-            if split.len() != 2 {
-                log::error!("Incorrect number of arguments");
-                input.clear();
-                continue;
-            }
-            
-            let message = split[1].to_string();
-
-            for handle in handles.lock().unwrap().iter() {
-                if handle.send_message(message.clone()).is_ok() {
-                    log::info!("Successfully sent message {} to client with IP {}", message, handle.ip);
-                }
-                else {
-                    log::error!("An error occurred while sending message {} to client with IP {}", message, handle.ip)
-                }
-            }
-        }
-        else {
-            log::error!("Please enter a valid command");
+        let error = match command {
+            "echo" => echo(args, &handles),
+            "echoall" => echoall(args, &handles),
+            "run" => run(args, &handles),
+            _ => Err(InvalidCommandErr("The command specified does not exist")),
+        };
+        
+        match error {
+            Ok(msg) => log::info!("{}", msg),
+            Err(MultipleErr(vec)) => vec.iter().for_each(|err| log::error!("{}", err.clone().inner().unwrap())),
+            Err(err) => log::error!("{}", err.inner().unwrap()),
         }
 
         input.clear();
@@ -147,7 +109,7 @@ fn main() -> io::Result<()> {
 
     // Clone handle vector to use in main thread
     let clone = handles.clone();
-    thread::spawn( move || handle_clients(clone));
+    thread::spawn(move || handle_clients(clone));
 
     for stream in listener.incoming() {
         match stream {
