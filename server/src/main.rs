@@ -4,21 +4,28 @@ use std::{io, thread};
 use std::io::{BufReader, BufWriter};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{channel, Receiver, Sender, SendError};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use lib::{send_data, receive_data, Command};
 use crate::tools::{echo, echoall, run};
 use crate::tools::CommandErr::*;
 
 #[derive(Clone)]
 struct ClientHandle {
-    sender: Sender<(Command, String)>,
+    sender: Sender<(Command, String, Sender<Option<String>>)>,
     ip: String,
 }
 
 impl ClientHandle {
     // Sends a message to the corresponding Client object
-    fn send_message(&self, command: Command, message: String) -> Result<(), SendError<(Command, String)>> {
-        self.sender.send((command, message))
+    fn send_to_client(&self, command: Command, message: String) -> Option<String> {
+        // Create new channel to receive response from client
+        let (client_sender, handle_receiver) = channel();
+        
+        // Should be safe to unwrap since there should always be a corresponding receiver
+        self.sender.send((command, message, client_sender)).unwrap();
+        
+        // Receive response from client. Client will always send, so unwrap is fine
+        handle_receiver.recv().unwrap()
     }
 }
 
@@ -26,8 +33,7 @@ impl ClientHandle {
 struct Client {
     reader: BufReader<TcpStream>,
     writer: BufWriter<TcpStream>,
-    receiver: Receiver<(Command, String)>,
-    ip: String,
+    receiver: Receiver<(Command, String, Sender<Option<String>>)>,
 }
 
 
@@ -40,30 +46,28 @@ impl Client {
 
         let (sender, receiver) = channel();
 
-        (Client { reader, writer, receiver, ip: ip.clone() }, ClientHandle { sender, ip })
+        (Client { reader, writer, receiver, }, ClientHandle { sender, ip, })
     }
 
-    fn send_message(&mut self) -> Option<String> {
-        let (command, message) = self.receiver.recv().ok()?;
+    // Waits to receive data from ClientHandle, sends response back once received from client
+    fn send_message(&mut self) {
+        // Unwrap should be fine since handle sends correct data
+        let (command, message, sender) = self.receiver.recv().unwrap();
 
+        let mut response_to_send = None;
+        
         if send_data(command as u8, message.as_bytes(), &mut self.writer).is_ok() {
+            // Client should only use Command::Send to send back a response
             if let Some((Command::Send, bytes)) = receive_data(&mut self.reader) {
                 let response = String::from_utf8_lossy(&bytes);
-                Some(response.parse().unwrap())
+                response_to_send = Some(response.parse().unwrap());
             }
-            else { None }
         }
-        else { None }
+        sender.send(response_to_send).unwrap()
     }
-    fn handle_client(&mut self) {
+    fn handle_client(&mut self) { // TODO: move response logic to handle
         loop {
-            if let Some(response) = self.send_message() {
-                log::info!("Successful response from client with IP {}: {}", self.ip, response);
-            }
-            else {
-                log::error!("An error occurred while receiving response from IP {}", self.ip);
-            }
-
+            self.send_message();
         }
     }
 }
@@ -76,9 +80,6 @@ fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
 
         let command = args[0];
 
-        let handles = handles.clone();
-
-
         let error = match command {
             "echo" => echo(args, &handles),
             "echoall" => echoall(args, &handles),
@@ -88,12 +89,11 @@ fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
         
         match error {
             Ok(msg) => log::info!("{}", msg),
-            Err(MultipleErr(vec)) => vec.iter().for_each(|err| log::error!("{}", err.clone().inner().unwrap())),
-            Err(err) => log::error!("{}", err.inner().unwrap()),
+            Err(MultipleErr(vec)) => vec.iter().for_each(|err| log::error!("{}", err)),
+            Err(err) => log::error!("{}", err),
         }
 
         input.clear();
-        drop(handles);
     }
 }
 
@@ -132,6 +132,5 @@ fn main() -> io::Result<()> {
             }
         }
     }
-
     Ok(())
 }
