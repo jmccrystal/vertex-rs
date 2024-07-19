@@ -8,3 +8,5 @@ edition = "2021"
 lib = { path = "../lib" }
 pretty_env_logger = "0.5.0"
 log = "0.4.22"
+serde = "1.0.204"
+serde_json = "1.0.120"

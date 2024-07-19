@@ -6,18 +6,22 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use lib::{send_data, receive_data, Command};
-use crate::tools::{echo, echoall, run};
-use crate::tools::CommandErr::*;
+use lib::CommandErr::*;
+use crate::tools::{echo, echoall, popup, run};
+
+
+type ClientHandleSender = Sender<(Command, String, Sender<Option<Vec<u8>>>)>;
+type ClientHandleReceiver = Receiver<(Command, String, Sender<Option<Vec<u8>>>)>;
 
 #[derive(Clone)]
 struct ClientHandle {
-    sender: Sender<(Command, String, Sender<Option<String>>)>,
+    sender: ClientHandleSender,
     ip: String,
 }
 
 impl ClientHandle {
-    // Sends a message to the corresponding Client object
-    fn send_to_client(&self, command: Command, message: String) -> Option<String> {
+    /// Sends a message to the corresponding Client object
+    fn send_to_client(&self, command: Command, message: String) -> Option<Vec<u8>> {
         // Create new channel to receive response from client
         let (client_sender, handle_receiver) = channel();
         
@@ -33,7 +37,7 @@ impl ClientHandle {
 struct Client {
     reader: BufReader<TcpStream>,
     writer: BufWriter<TcpStream>,
-    receiver: Receiver<(Command, String, Sender<Option<String>>)>,
+    receiver: ClientHandleReceiver,
 }
 
 
@@ -49,30 +53,31 @@ impl Client {
         (Client { reader, writer, receiver, }, ClientHandle { sender, ip, })
     }
 
-    // Waits to receive data from ClientHandle, sends response back once received from client
+    /// Waits to receive data from ClientHandle, sends response back once received from client
     fn send_message(&mut self) {
         // Unwrap should be fine since handle sends correct data
         let (command, message, sender) = self.receiver.recv().unwrap();
 
         let mut response_to_send = None;
-        
-        if send_data(command as u8, message.as_bytes(), &mut self.writer).is_ok() {
+
+        if send_data(command, &message, &mut self.writer).is_ok() {
             // Client should only use Command::Send to send back a response
-            if let Some((Command::Send, bytes)) = receive_data(&mut self.reader) {
-                let response = String::from_utf8_lossy(&bytes);
-                response_to_send = Some(response.parse().unwrap());
+            if let Some((Command::Send, buf)) = receive_data(&mut self.reader) {
+                // TODO: Remove unwrap
+                response_to_send = Some(buf);
             }
         }
         sender.send(response_to_send).unwrap()
     }
-    fn handle_client(&mut self) { // TODO: move response logic to handle
+    fn handle_client(&mut self) {
         loop {
             self.send_message();
         }
     }
 }
 
-fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
+/// Handles commands.
+fn handle_commands(handles: Arc<Mutex<Vec<ClientHandle>>>) {
     let mut input = String::new();
     loop {
         io::stdin().read_line(&mut input).unwrap();
@@ -84,6 +89,7 @@ fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
             "echo" => echo(args, &handles),
             "echoall" => echoall(args, &handles),
             "run" => run(args, &handles),
+            "popup" => popup(args, &handles),
             _ => Err(InvalidCommandErr("The command specified does not exist")),
         };
         
@@ -99,7 +105,6 @@ fn handle_clients(handles: Arc<Mutex<Vec<ClientHandle>>>) {
 
 
 fn main() -> io::Result<()> {
-
     pretty_env_logger::init();
     log::debug!("Connected to stream");
     let listener = TcpListener::bind("127.0.0.1:4000")?;
@@ -109,7 +114,7 @@ fn main() -> io::Result<()> {
 
     // Clone handle vector to use in main thread
     let clone = handles.clone();
-    thread::spawn(move || handle_clients(clone));
+    thread::spawn( move || handle_commands(clone));
 
     for stream in listener.incoming() {
         match stream {
