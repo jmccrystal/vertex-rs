@@ -36,7 +36,7 @@ impl Command {
 /// Defines types of errors when sending commands
 pub enum CommandErr {
     ArgNumErr(&'static str),
-    SendMessageErr(String),
+    SendMessageErr(String, String),
     InvalidCommandErr(&'static str),
     NoClientsErr(&'static str),
     MultipleErr(Vec<CommandErr>),
@@ -48,7 +48,7 @@ impl CommandErr {
     pub fn inner(&self) -> Option<String> {
         let string = match self {
             ArgNumErr(msg) => msg.to_string(),
-            SendMessageErr(msg) => msg.to_string(),
+            SendMessageErr(msg, _) => msg.to_string(),
             InvalidCommandErr(msg) => msg.to_string(),
             NoClientsErr(msg) => msg.to_string(),
             DeserializeErr(msg) => msg.to_string(),
@@ -58,7 +58,7 @@ impl CommandErr {
     }
 }
 
-impl From<serde_json::Error> for CommandErr {
+impl From<Error> for CommandErr {
     fn from(_value: Error) -> Self {
         DeserializeErr("An error occurred while deserializing data")
     }
@@ -76,6 +76,7 @@ impl fmt::Display for CommandErr {
 
 /// Function that serializes a byte buffer with a length prefix and sends it through the writer.
 /// Structure of data: buf\[0]: type of data. buf[1..5]: length of message. buf[5..]: message as JSON.
+/// The data buffer is XOR encrypted using the XOR_KEY constant.
 pub fn send_data(command: Command, data: &impl Serialize, writer: &mut impl Write) -> io::Result<()> {
     // Encode data into json vec
     let mut buf = serde_json::to_vec(data)?;
@@ -96,6 +97,7 @@ pub fn send_data(command: Command, data: &impl Serialize, writer: &mut impl Writ
     writer.write_all(&len_bytes)?;
     writer.write_all(&buf)?;
 
+    // Flush write buffer to send all data
     writer.flush()
 }
 

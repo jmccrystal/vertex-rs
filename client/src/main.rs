@@ -11,18 +11,16 @@ pub struct Client {
     writer: BufWriter<TcpStream>,
 }
 
-// TODO: Implement heartbeat. Automatically attempt reconnect if heartbeat fails.
-
-/// The client will have several actions defined in the lib::Command enum.
-/// Each command will correspond to a function to run on the client defined in this impl block.
 impl Client {
+    /// Initialize a new client with a stream
     fn new(stream: TcpStream) -> Client {
         let reader = BufReader::new(stream.try_clone().unwrap());
         let writer = BufWriter::new(stream.try_clone().unwrap());
-
+        
         Client { reader, writer }
     }
 
+    /// Main event loop for receiving commands
     fn handle_client(&mut self) {
         loop {
             match receive_data(&mut self.reader) {
@@ -33,11 +31,9 @@ impl Client {
     }
 }
 
-fn main() {
-    pretty_env_logger::init();
-
+fn initialize_client(ip: &str) -> Client {
     let stream = loop {
-        match TcpStream::connect(goldberg_string!("127.0.0.1:4000")) {
+        match TcpStream::connect(ip) {
             Ok(stream) => {
                 log::debug!("Connected to stream");
                 break stream;
@@ -48,10 +44,16 @@ fn main() {
             }
         };
     };
+    Client::new(stream)
+}
 
-    let mut client = Client::new(stream);
+fn main() {
+    pretty_env_logger::init();
 
     loop {
+        let mut client = initialize_client(goldberg_string!("127.0.0.1:4000"));
         client.handle_client();
+        // If handle_client() returns, attempt connection again
+        log::error!("Stream lost, attempting to reconnect")
     }
 }

