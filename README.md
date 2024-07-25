@@ -3,7 +3,7 @@
 
 ## Overview
 
-This project is a remote access trojan with a client-server architecture for multithreaded remote command execution and communication. It consists of a server that can manage multiple client connections and send various commands to be executed on the client machines. Currently, it seems to be undetected by most if not all antivirus software.
+This project is a remote access trojan with a client-server architecture for multithreaded remote command execution and communication. It consists of a server that can manage multiple client connections and send various commands to be executed on the client machines.
 
 ## Components
 
