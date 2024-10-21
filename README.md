@@ -98,10 +98,6 @@ This project is currently in development. Some features, like the screenshot fun
 
 Contributions to improve the project are welcome. Please ensure to follow good coding practices and add appropriate tests for new features.
 
-## License
-
-This project is licensed under the MIT License.
-
 ## Disclaimer
 
 This software is provided as-is, without any guarantees or warranties. Use at your own risk.
