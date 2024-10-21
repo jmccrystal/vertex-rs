@@ -57,7 +57,7 @@ Important notes:
 Once the server is running and clients are connected, you can use the following commands:
 
 - `echo <ip> <message>`: Send a message to a specific client and receive an echo back
-- `echoall <message>`: Echo a message to all connected clients
+- `echoall <message>`: Echo a message to all connected clients (generally intended for ensuring client connectivity)
 - `run <ip> <command>`: Execute a PowerShell command on a specific client
 - `popup <ip> <message>`: Display a popup message on a specific client's machine
 - `screenshot <ip>`: Attempt to take a screenshot of a specific client's screen (currently unfinished)
