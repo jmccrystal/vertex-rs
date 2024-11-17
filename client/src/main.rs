@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod tools;
 
 use std::io::{BufReader, BufWriter};
@@ -31,8 +33,10 @@ impl Client {
     }
 }
 
+/// Connect to the stream and create a Client object from the stream
 fn initialize_client(ip: &str) -> Client {
     let stream = loop {
+        log::trace!("Attempting to connect to stream");
         match TcpStream::connect(ip) {
             Ok(stream) => {
                 log::debug!("Connected to stream");
@@ -51,9 +55,10 @@ fn main() {
     pretty_env_logger::init();
 
     loop {
-        let mut client = initialize_client(goldberg_string!("127.0.0.1:4000"));
+        let mut client = initialize_client(goldberg_string!("127.0.0.1:8080"));
         client.handle_client();
         // If handle_client() returns, attempt connection again
         log::error!("Stream lost, attempting to reconnect")
     }
 }
+    

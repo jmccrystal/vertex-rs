@@ -1,11 +1,28 @@
 use std::{fmt, io};
 use std::io::{Read, Write};
 use serde::{Deserialize, Serialize};
-use serde_json::Error;
-use crate::CommandErr::*;
 
 static XOR_KEY: &[u8] = b"ENCRYPTION_KEY";
 
+// Use persistent atomic integer to keep track of message IDs, constantly incrementing per message
+
+
+/// Enum with each option being a different serializable type.
+/// Allows for arbitrary message sending rather than byte buffers.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Message {
+    Text(String),
+    Empty,
+    // add more variants if necessary
+}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Payload {
+    pub message: Message,
+    pub command: Command,
+    pub id: i32,
+}
 
 /// Defines the kind of message being sent
 #[derive(Debug, Serialize, Deserialize)]
@@ -15,8 +32,9 @@ pub enum Command {
     Echo = 1,
     Run = 2,
     Message = 3,
+    Screenshot = 4,
+    Response = 5,
 }
-
 
 impl Command {
     /// Get a command type from a single byte
@@ -26,56 +44,16 @@ impl Command {
             1 => Some(Command::Echo),
             2 => Some(Command::Run),
             3 => Some(Command::Message),
+            4 => Some(Command::Screenshot),
+            5 => Some(Command::Response),
             _ => None,
         }
     }
 }
 
 
-#[derive(Clone)]
-/// Defines types of errors when sending commands
-pub enum CommandErr {
-    ArgNumErr(&'static str),
-    SendMessageErr(String, String),
-    InvalidCommandErr(&'static str),
-    NoClientsErr(&'static str),
-    MultipleErr(Vec<CommandErr>),
-    DeserializeErr(&'static str),
-}
-
-impl CommandErr {
-    /// Get inner error message from each error
-    pub fn inner(&self) -> Option<String> {
-        let string = match self {
-            ArgNumErr(msg) => msg.to_string(),
-            SendMessageErr(msg, _) => msg.to_string(),
-            InvalidCommandErr(msg) => msg.to_string(),
-            NoClientsErr(msg) => msg.to_string(),
-            DeserializeErr(msg) => msg.to_string(),
-            MultipleErr(_) => return None,
-        };
-        Some(string)
-    }
-}
-
-impl From<Error> for CommandErr {
-    fn from(_value: Error) -> Self {
-        DeserializeErr("An error occurred while deserializing data")
-    }
-}
-
-impl fmt::Display for CommandErr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.inner().is_none() {
-            return Ok(())
-        }
-        write!(f, "{}", self.inner().unwrap())
-    }
-}
-
-
 /// Function that serializes a byte buffer with a length prefix and sends it through the writer.
-/// Structure of data: buf\[0]: type of data. buf[1..5]: length of message. buf[5..]: message as JSON.
+/// Structure of data: buf[0]: type of data. buf[1..5]: length of message. buf[5..]: message as JSON.
 /// The data buffer is XOR encrypted using the XOR_KEY constant.
 pub fn send_data(command: Command, data: &impl Serialize, writer: &mut impl Write) -> io::Result<()> {
     // Encode data into json vec

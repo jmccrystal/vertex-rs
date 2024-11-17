@@ -9,8 +9,13 @@ lib = { path = "../lib" }
 pretty_env_logger = "0.5.0"
 log = "0.4.22"
 goldberg = "0.1.0"
-
-winapi = { version = "0.3.9", features = ["winuser"] }
-user32-sys = "0.2.0"
 serde_json = "1.0.120"
 serde = { version = "1.0.204", features = ["derive"] }
+
+[dependencies.windows]
+version = "0.58.0"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+]
