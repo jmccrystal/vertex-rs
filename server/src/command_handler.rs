@@ -55,7 +55,7 @@ pub(crate) fn parse_command(input: &str, handles: HandleVec) -> Result<String, C
         _ => {}
     };
 
-    if args.len() <= 2 {
+    if args.len() <= 1 {
         return Err(InvalidCommandErr("Incorrect number of arguments."));
     }
 

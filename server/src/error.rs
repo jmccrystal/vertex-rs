@@ -33,6 +33,13 @@ impl From<Error> for CommandErr {
     fn from(_value: Error) -> Self { DeserializeErr("An error occurred while deserializing data") }
 }
 
+impl From<std::io::Error> for CommandErr {
+    fn from(value: std::io::Error) -> Self {
+        DeserializeErr("An I/O error occurred")
+    }
+}
+
+
 impl fmt::Display for CommandErr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.inner().is_none() {

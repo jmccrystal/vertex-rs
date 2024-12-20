@@ -20,7 +20,7 @@ fn main() -> io::Result<()> {
     print_banner();
     
     log::debug!("Connected to stream");
-    let listener = TcpListener::bind("0.0.0.0:8080")?;
+    let listener = TcpListener::bind("127.0.0.1:8080")?;
 
     // Create synchronous vector of handles
     let handles: HandleVec = Arc::new(Mutex::new(Vec::new()));

