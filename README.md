@@ -17,7 +17,7 @@ This project is a remote access trojan with a client-server architecture for mul
 - Remote command execution (PowerShell commands)
 - Echo functionality
 - Message popup on client machines
-- Screenshot capability (work in progress)
+- Screenshot capability
 - Client listing
 - Error handling and logging
 
@@ -84,7 +84,7 @@ list
 
 ## Development Status
 
-This project is currently in development. Some features, like the screenshot functionality, are not fully implemented or may have issues.
+This project is currently in development. Some features are not fully implemented or may have issues.
 
 ## Future Improvements
 
