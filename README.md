@@ -85,7 +85,7 @@ list
 
 ## Development Status
 
-The project appears to be functional with all core features implemented, including screenshots.
+The project is currently functional with all features working. However, the project remains in development, and future changes are coming.
 
 ## Future Improvements
 
